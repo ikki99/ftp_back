@@ -1,20 +1,19 @@
 #!/bin/bash
 set -e  # 遇到错误时退出
 
-# 设置远程目录(根据需要自行修改，建议后面换成服务器IP)
-FTP_TARGET_DIR="${1:-1panel_0.0.0.0}"
+# 设置远程目录
+FTP_TARGET_DIR="${1:-1panel_107.148.61.50}"
 
 # 配置信息
-#备份的原目录，默认是1panel的默认备份目录，如果不是默认目录请修改
 BACKUP_DIR="/opt/1panel/backup"
-#远程FTP的信息，请自行修改
-FTP_SERVER="$YOU_FTP_URL"
-FTP_USER="$YOU_FTP_user"
-FTP_PASS="$YOU_FTP_pwd"
-#Email的发件人和收件人，用来接收通知，需要服务器安装sendmail并进行配置
-EMAIL_FROM="you_email"
-EMAIL_TO="you_email"
+FTP_SERVER="172.98.12.88"
+FTP_USER="10w_bak"
+FTP_PASS="wngx@9999"
+EMAIL_FROM="ikkiwan99@gmail.com"
+EMAIL_TO="wngx99@gmail.com"
 LOG_FILE="/var/log/backup.log"
+
+KEEP_BACKUPS=3  # 每个项目保留的备份数量
 
 # 清除旧的日志文件
 > "$LOG_FILE"
@@ -100,6 +99,60 @@ EOF
     log "文件上传完成"
 }
 
+# 获取远程文件列表
+get_remote_files() {
+    lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" << EOF
+    set ssl:verify-certificate no
+    cd "$FTP_TARGET_DIR"
+    find . -type f
+    quit
+EOF
+}
+# 删除旧的远程备份文件
+delete_old_backups() {
+    log "开始检查并删除旧的远程备份文件"
+
+    # 获取远程文件列表
+    mapfile -t remote_files < <(get_remote_files)
+
+    # 获取本地文件列表
+    mapfile -t local_files < <(find "$BACKUP_DIR" -type f -printf "%P\n")
+
+    # 创建关联数组来存储每个项目的文件
+    declare -A project_files
+
+    # 遍历远程文件，将它们分类到不同的项目中
+    for file in "${remote_files[@]}"; do
+        project=$(echo "$file" | cut -d'/' -f1-3)  # 假设项目名在路径的前三个部分
+        project_files["$project"]+="$file "
+    done
+
+    # 检查每个项目的文件数量，如果超过限制就删除最旧的文件
+    for project in "${!project_files[@]}"; do
+        IFS=' ' read -ra files <<< "${project_files[$project]}"
+        if [ ${#files[@]} -gt $KEEP_BACKUPS ]; then
+            # 按照修改时间排序文件
+            IFS=$'\n' sorted_files=($(printf "%s\n" "${files[@]}" | xargs -I {} lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" -e "set ssl:verify-certificate no; cd $FTP_TARGET_DIR; ls -t {}; quit" | awk '{print $9}'))
+            
+            # 删除多余的旧文件
+            for ((i=KEEP_BACKUPS; i<${#sorted_files[@]}; i++)); do
+                file_to_delete="${sorted_files[i]}"
+                if ! [[ " ${local_files[*]} " =~ " ${file_to_delete#./} " ]]; then
+                    log "删除旧的远程文件: $file_to_delete"
+                    lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" << EOF
+                    set ssl:verify-certificate no
+                    cd "$FTP_TARGET_DIR"
+                    rm "$file_to_delete"
+                    quit
+EOF
+                fi
+            done
+        fi
+    done
+
+    log "完成检查和删除旧的远程备份文件"
+}
+
 # 发送邮件通知
 send_email() {
     local subject="$1"
@@ -121,6 +174,7 @@ main() {
     log "使用的远程目录: $FTP_TARGET_DIR"
     
     upload_files
+    delete_old_backups
     
     if [ $? -eq 0 ]; then
         log "备份完成并成功上传到 FTP 服务器"
