@@ -1,16 +1,16 @@
 #!/bin/bash
 set -e  # 遇到错误时退出
 
-# 设置远程目录
-FTP_TARGET_DIR="${1:-1panel_107.148.61.50}"
+# 设置远程目录（建议设置为自己的目录）
+FTP_TARGET_DIR="${1:-1panel_0.0.0.0}"
 
 # 配置信息
 BACKUP_DIR="/opt/1panel/backup"
-FTP_SERVER="172.98.12.88"
-FTP_USER="10w_bak"
-FTP_PASS="wngx@9999"
-EMAIL_FROM="ikkiwan99@gmail.com"
-EMAIL_TO="wngx99@gmail.com"
+FTP_SERVER="YOUR_FTP_ip"
+FTP_USER="YOUR_FTP_USER"
+FTP_PASS="YOUR_FTP_pwd"
+EMAIL_FROM="youremail"
+EMAIL_TO="youremail"
 LOG_FILE="/var/log/backup.log"
 
 KEEP_BACKUPS=3  # 每个项目保留的备份数量
